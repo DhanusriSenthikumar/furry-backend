@@ -1,0 +1,14 @@
+fastapi>=0.115
+uvicorn[standard]>=0.34
+motor>=3.6
+pydantic>=2.10
+pydantic-settings>=2.7
+python-jose[cryptography]>=3.3
+passlib[bcrypt]>=1.7.4
+bcrypt>=4.0,<4.1
+python-dotenv>=1.0
+email-validator>=2.1
+stripe>=11.0
+razorpay>=1.4
+# Powers the MCP server mounted at /mcp
+mcp>=2.0
