@@ -22,14 +22,19 @@ from app.modules.auth.router import router as auth_router
 from app.modules.cart.router import router as cart_router
 from app.modules.categories.router import router as categories_router
 from app.modules.coupons.router import router as coupons_router
+from app.modules.loyalty.router import router as loyalty_router
+from app.modules.notifications.router import router as notifications_router
 from app.modules.orders.router import router as orders_router
 from app.modules.payments.router import router as payments_router
 from app.modules.pets.router import router as pets_router
 from app.modules.products.router import router as products_router
 from app.modules.questions.router import router as questions_router
+from app.modules.referrals.router import router as referrals_router
 from app.modules.returns.router import router as returns_router
 from app.modules.reviews.router import router as reviews_router
 from app.modules.stock_alerts.router import router as stock_alerts_router
+from app.modules.subscriptions.router import router as subscriptions_router
+from app.modules.support.router import router as support_router
 from app.modules.users.router import router as users_router
 from app.modules.wishlist.router import router as wishlist_router
 
@@ -67,6 +72,51 @@ async def create_indexes() -> None:
         # restock runs: who is still waiting on this one.
         await mongodb.database.stock_alerts.create_index([("user_id", 1), ("product_id", 1)], unique=True)
         await mongodb.database.stock_alerts.create_index([("product_id", 1), ("notified_at", 1)])
+
+        # The customer's feed, newest first, plus the badge count.
+        await mongodb.database.notifications.create_index([("user_id", 1), ("_id", -1)])
+        await mongodb.database.notifications.create_index([("user_id", 1), ("read_at", 1)])
+        # Makes an event idempotent: a second attempt to record the same thing
+        # for the same person is rejected rather than duplicated.
+        #
+        # Partial, not sparse. A compound *sparse* index only skips a document
+        # when every indexed field is missing, and user_id never is — so the
+        # keyless notifications, which are most of them, would all index as
+        # dedupe_key: null and collide with each other. A customer would receive
+        # exactly one un-keyed notification, ever, and the rest would be dropped
+        # in silence because pushing a notification deliberately can't raise.
+        await mongodb.database.notifications.create_index(
+            [("user_id", 1), ("dedupe_key", 1)],
+            unique=True,
+            partialFilterExpression={"dedupe_key": {"$exists": True}},
+        )
+
+        # The points ledger. The unique key on dedupe_key is what makes crediting
+        # single-shot — it is the only lock available for "this order has already
+        # earned", so it must exist for the balance to be trustworthy.
+        await mongodb.database.loyalty_entries.create_index([("user_id", 1), ("_id", -1)])
+        await mongodb.database.loyalty_entries.create_index("dedupe_key", unique=True, sparse=True)
+        await mongodb.database.loyalty_entries.create_index([("order_id", 1), ("kind", 1)])
+
+        # One code per customer, and one referral per referee — an account can
+        # be attributed once, ever.
+        await mongodb.database.users.create_index("referral_code", unique=True, sparse=True)
+        await mongodb.database.referrals.create_index("referee_id", unique=True)
+        await mongodb.database.referrals.create_index([("referrer_id", 1), ("_id", -1)])
+
+        # The runner's query: active plans that have fallen due and aren't
+        # already claimed by another run.
+        await mongodb.database.subscriptions.create_index(
+            [("status", 1), ("next_delivery_at", 1), ("run_batch", 1)]
+        )
+        await mongodb.database.subscriptions.create_index([("user_id", 1), ("status", 1)])
+        await mongodb.database.subscriptions.create_index([("user_id", 1), ("product_id", 1)])
+
+        # The customer's ticket list and the staff queue, which is ordered by who
+        # has been waiting longest.
+        await mongodb.database.support_tickets.create_index([("user_id", 1), ("last_message_at", -1)])
+        await mongodb.database.support_tickets.create_index([("status", 1), ("last_message_at", 1)])
+        await mongodb.database.support_tickets.create_index([("awaiting", 1), ("status", 1)])
     except Exception as exc:
         print(f"Warning: could not create indexes (DB unreachable at startup?): {exc}")
 
@@ -129,6 +179,11 @@ app.include_router(orders_router)
 app.include_router(returns_router)
 app.include_router(coupons_router)
 app.include_router(payments_router)
+app.include_router(subscriptions_router)
+app.include_router(loyalty_router)
+app.include_router(referrals_router)
+app.include_router(support_router)
+app.include_router(notifications_router)
 app.include_router(admin_router)
 
 

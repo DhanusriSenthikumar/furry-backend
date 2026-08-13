@@ -11,17 +11,25 @@ from app.core.security import (
     hash_reset_token,
     verify_password,
 )
+from app.modules.referrals.service import ReferralService
 from app.modules.users.repository import UserRepository
 from app.modules.users.service import UserService
 
 
 class AuthService:
-    def __init__(self, repo: UserRepository):
+    def __init__(self, repo: UserRepository, referrals: ReferralService | None = None):
         self.repo = repo
         self.users = UserService(repo)
+        # Optional: without it a signup still works, the invite just isn't
+        # credited. `attach` swallows its own errors for the same reason.
+        self.referrals = referrals
 
-    async def signup(self, name: str, email: str, password: str) -> tuple[dict, str]:
+    async def signup(
+        self, name: str, email: str, password: str, referral_code: str | None = None
+    ) -> tuple[dict, str]:
         user = await self.users.create(name, email, password)
+        if referral_code and self.referrals is not None:
+            await self.referrals.attach(user, referral_code)
         token = create_access_token(str(user["_id"]))
         return user, token
 

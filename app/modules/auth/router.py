@@ -4,6 +4,7 @@ from app.core.config import settings
 from app.core.security import create_access_token
 from app.deps import get_current_user, get_db
 from app.modules.auth.service import AuthService
+from app.modules.referrals.router import build_referral_service
 from app.modules.users.repository import UserRepository
 from app.modules.users.router import user_out
 from app.modules.users.schemas import (
@@ -20,7 +21,7 @@ COOKIE_MAX_AGE = settings.access_token_expire_minutes * 60
 
 
 def _service(db=Depends(get_db)) -> AuthService:
-    return AuthService(UserRepository(db))
+    return AuthService(UserRepository(db), build_referral_service(db))
 
 
 def _set_auth_cookie(response: Response, token: str) -> None:
@@ -28,7 +29,8 @@ def _set_auth_cookie(response: Response, token: str) -> None:
         key="access_token",
         value=token,
         httponly=True,
-        samesite="lax",
+        secure=settings.cookie_secure,
+        samesite=settings.cookie_samesite,
         max_age=COOKIE_MAX_AGE,
         path="/",
     )
@@ -36,7 +38,9 @@ def _set_auth_cookie(response: Response, token: str) -> None:
 
 @router.post("/signup", response_model=UserOut, status_code=201)
 async def signup(payload: UserCreate, response: Response, service: AuthService = Depends(_service)):
-    user, token = await service.signup(payload.name, payload.email, payload.password)
+    user, token = await service.signup(
+        payload.name, payload.email, payload.password, payload.referral_code
+    )
     _set_auth_cookie(response, token)
     return user_out(user)
 
@@ -65,7 +69,15 @@ async def issue_token(payload: UserLogin, service: AuthService = Depends(_servic
 
 @router.post("/logout")
 async def logout(response: Response):
-    response.delete_cookie("access_token", path="/")
+    # The clearing cookie has to carry the same attributes it was set with, or
+    # the browser treats it as a different cookie and leaves the session intact.
+    response.delete_cookie(
+        "access_token",
+        path="/",
+        secure=settings.cookie_secure,
+        samesite=settings.cookie_samesite,
+        httponly=True,
+    )
     return {"ok": True}
 
 

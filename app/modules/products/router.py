@@ -20,7 +20,7 @@ from app.modules.recommendations.service import RecommendationService
 from app.modules.reviews.repository import ReviewRepository
 from app.modules.reviews.schemas import ReviewCreate, ReviewEligibilityOut, ReviewOut
 from app.modules.reviews.service import ReviewService
-from app.modules.stock_alerts.repository import StockAlertRepository
+from app.modules.stock_alerts.router import build_stock_alert_service
 from app.modules.stock_alerts.service import StockAlertService
 from app.modules.users.repository import UserRepository
 
@@ -30,7 +30,7 @@ router = APIRouter(tags=["products"])
 def _alert_service(db) -> StockAlertService:
     """Built alongside the product service so an admin stock edit tells whoever
     has been waiting for that product."""
-    return StockAlertService(StockAlertRepository(db), ProductRepository(db), UserRepository(db))
+    return build_stock_alert_service(db)
 
 
 def _service(db=Depends(get_db)) -> ProductService:

@@ -32,7 +32,10 @@ from app.modules.cart.service import CartService
 from app.modules.categories.repository import CategoryRepository
 from app.modules.coupons.repository import CouponRepository
 from app.modules.coupons.service import CouponService
+from app.modules.notifications.repository import NotificationRepository
+from app.modules.notifications.service import NotificationService
 from app.modules.orders.repository import OrderRepository
+from app.modules.orders.router import build_order_service
 from app.modules.orders.schemas import OrderItemIn, OrderQuote, ShipmentCreate
 from app.modules.orders.service import OrderService
 from app.modules.payments.razorpay_client import razorpay_client
@@ -51,7 +54,7 @@ from app.modules.returns.repository import ReturnRepository
 from app.modules.returns.schemas import ReturnCreate, ReturnItemIn, ReturnRefund, ReturnResolve
 from app.modules.returns.service import ReturnService
 from app.modules.reviews.repository import ReviewRepository
-from app.modules.stock_alerts.repository import StockAlertRepository
+from app.modules.stock_alerts.router import build_stock_alert_service
 from app.modules.stock_alerts.service import StockAlertService
 from app.modules.users.repository import UserRepository
 from app.modules.wishlist.repository import WishlistRepository
@@ -212,20 +215,14 @@ def _question_brief(doc: dict) -> dict[str, Any]:
 
 
 def _alert_service(db) -> StockAlertService:
-    return StockAlertService(StockAlertRepository(db), ProductRepository(db), UserRepository(db))
+    return build_stock_alert_service(db)
 
 
 def _order_service(db) -> OrderService:
     """Fully wired, including the user lookup — a status change made by an agent
-    should email the customer exactly as one made in the admin UI does."""
-    orders = OrderRepository(db)
-    return OrderService(
-        orders,
-        ProductRepository(db),
-        CouponService(CouponRepository(db), orders),
-        UserRepository(db),
-        _alert_service(db),
-    )
+    should email the customer, land in their feed, and settle their points
+    exactly as one made in the admin UI does."""
+    return build_order_service(db)
 
 
 def _return_service(db) -> ReturnService:
@@ -238,6 +235,7 @@ def _return_service(db) -> ReturnService:
         stripe_client,
         razorpay_client,
         _alert_service(db),
+        NotificationService(NotificationRepository(db)),
     )
 
 
@@ -602,7 +600,7 @@ def build_mcp_server() -> MCPServer:
         user = await require_user(_headers(ctx))
         db = get_database()
         doc = await _resolve_product(db, product)
-        service = QuestionService(QuestionRepository(db), ProductRepository(db))
+        service = QuestionService(QuestionRepository(db), ProductRepository(db), NotificationService(NotificationRepository(db)))
         asked = await service.ask(str(doc["_id"]), user, QuestionCreate(body=question))
         return _question_brief(asked)
 
@@ -777,7 +775,7 @@ def build_mcp_server() -> MCPServer:
         Requires an admin token."""
         await require_admin(_headers(ctx))
         db = get_database()
-        service = QuestionService(QuestionRepository(db), ProductRepository(db))
+        service = QuestionService(QuestionRepository(db), ProductRepository(db), NotificationService(NotificationRepository(db)))
         return [_question_brief(q) for q in await service.list_unanswered()]
 
     @mcp.tool()
@@ -786,7 +784,7 @@ def build_mcp_server() -> MCPServer:
         under the staff name on the token. Requires an admin token."""
         admin = await require_admin(_headers(ctx))
         db = get_database()
-        service = QuestionService(QuestionRepository(db), ProductRepository(db))
+        service = QuestionService(QuestionRepository(db), ProductRepository(db), NotificationService(NotificationRepository(db)))
         answered = await service.answer(question_id, admin, AnswerCreate(body=answer))
         return _question_brief(answered)
 

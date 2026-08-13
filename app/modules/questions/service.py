@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 
 from app.core.exceptions import ForbiddenError, NotFoundError, ValidationError
+from app.modules.notifications.service import NotificationService
 from app.modules.products.repository import ProductRepository
 from app.modules.questions.repository import QuestionRepository
 from app.modules.questions.schemas import AnswerCreate, QuestionCreate
@@ -11,9 +12,17 @@ class QuestionService:
     is no one-per-customer rule — a shopper may ask about sizing today and
     ingredients tomorrow."""
 
-    def __init__(self, repo: QuestionRepository, products: ProductRepository):
+    def __init__(
+        self,
+        repo: QuestionRepository,
+        products: ProductRepository,
+        notifications: NotificationService | None = None,
+    ):
         self.repo = repo
         self.products = products
+        # An answer nobody sees is no answer. Whoever asked gets told, since
+        # they have no reason to keep re-opening the product page to check.
+        self.notifications = notifications
 
     async def list_for_product(self, product_id: str) -> list[dict]:
         return await self.repo.find_by_product(product_id)
@@ -52,7 +61,13 @@ class QuestionService:
             "answered_by": admin["name"],
             "answered_at": datetime.now(timezone.utc),
         }
-        return await self.repo.update_by_id(question_id, {"answer": answer})
+        updated = await self.repo.update_by_id(question_id, {"answer": answer})
+
+        # Keyed on the question, so correcting a typo in an answer doesn't tell
+        # the customer twice.
+        if self.notifications is not None and not question.get("answer"):
+            await self.notifications.question_answered(updated)
+        return updated
 
     async def delete(self, question_id: str, user: dict) -> None:
         question = await self.repo.find_by_id(question_id)

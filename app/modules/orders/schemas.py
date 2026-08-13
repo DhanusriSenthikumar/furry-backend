@@ -22,6 +22,9 @@ class OrderCreate(BaseModel):
     items: list[OrderItemIn] = Field(min_length=1)
     shipping_address: ShippingAddress
     coupon_code: str | None = None
+    # Loyalty points to put towards this order. Clamped server-side to what the
+    # customer holds and what the basket allows, never taken on trust.
+    redeem_points: int = Field(default=0, ge=0)
 
 
 class OrderQuote(BaseModel):
@@ -29,6 +32,7 @@ class OrderQuote(BaseModel):
 
     items: list[OrderItemIn] = Field(min_length=1)
     coupon_code: str | None = None
+    redeem_points: int = Field(default=0, ge=0)
 
 
 class OrderItemOut(BaseModel):
@@ -72,6 +76,9 @@ class OrderTotalsOut(BaseModel):
     discount: float
     shipping_fee: float
     tax: float
+    # Loyalty points spent, in money. Applied after tax and shipping because
+    # points are tender rather than a price cut.
+    rewards_discount: float = 0.0
     total: float
 
 
@@ -81,6 +88,9 @@ class OrderQuoteOut(OrderTotalsOut):
     # Set when a code was supplied but couldn't be applied, so the UI can explain
     # why without failing the whole quote.
     coupon_error: str | None = None
+    # Points the server would actually take — the request is clamped, so this can
+    # be lower than what was asked for.
+    redeem_points: int = 0
     free_shipping_threshold: float
     amount_to_free_shipping: float
 
@@ -95,9 +105,16 @@ class OrderOut(BaseModel):
     coupon_code: str | None = None
     shipping_fee: float
     tax: float
+    rewards_discount: float = 0.0
+    # Points actually spent on this order. Returned to the customer if it is
+    # cancelled or refunded.
+    redeem_points: int = 0
     total: float
     status: OrderStatus
     status_history: list[StatusHistoryEntry]
+    # "subscription" for a repeat delivery, empty for a normal basket.
+    source: str = ""
+    subscription_id: str | None = None
     can_cancel: bool = False
     # Set once the parcel is handed over; null before that and on cancelled orders.
     shipment: ShipmentOut | None = None

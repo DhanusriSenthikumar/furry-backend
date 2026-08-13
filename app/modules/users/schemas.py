@@ -21,6 +21,9 @@ class UserCreate(BaseModel):
     name: str = Field(min_length=1, max_length=100)
     email: EmailStr
     password: str = Field(min_length=8, max_length=128)
+    # Optional invite code. An unrecognised one is ignored rather than rejected —
+    # nobody should lose a completed signup over a mistyped bonus.
+    referral_code: str | None = Field(default=None, max_length=32)
 
 
 class UserLogin(BaseModel):
@@ -43,6 +46,10 @@ class UserOut(BaseModel):
     email: EmailStr
     is_admin: bool
     is_active: bool
+    # Carried on the session so the navbar can show a balance without a second
+    # round trip. The rewards page is still the authority on the detail.
+    loyalty_points: int = 0
+    loyalty_tier: str = "bronze"
 
 
 class UserUpdate(BaseModel):
