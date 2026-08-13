@@ -14,6 +14,14 @@ class Settings(BaseSettings):
     cors_origins: str = "http://localhost:3000"
     frontend_url: str = "http://localhost:3000"
 
+    # Session cookie attributes. The defaults suit a same-site setup — local
+    # http, or a frontend that proxies this API under its own origin. Set
+    # COOKIE_SECURE=true over https. Only set COOKIE_SAMESITE=none (which
+    # browsers accept solely alongside Secure) if the frontend calls this API
+    # cross-site, and note that Safari and Brave block such cookies outright.
+    cookie_secure: bool = False
+    cookie_samesite: str = "lax"
+
     stripe_secret_key: str = ""
     stripe_webhook_secret: str = ""
 
@@ -45,6 +53,49 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_use_tls: bool = True
     email_from: str = "no-reply@furryfriends.test"
+
+    # ------------------------------------------------------------------ #
+    # Loyalty
+    # ------------------------------------------------------------------ #
+    # Points are earned on what the customer actually paid for goods (after any
+    # discount, before tax and shipping) and only once the order is delivered.
+    # The two rates together set the effective return: at 10 earned per unit of
+    # currency and 200 needed to redeem one, a customer gets 5% back.
+    loyalty_enabled: bool = True
+    loyalty_points_per_currency: float = 10.0
+    loyalty_points_per_redeemed_currency: float = 200.0
+    # Redeeming a handful of points is more friction than it is worth to either
+    # side, and paying for an entire order in points would refund shipping and
+    # tax out of the store's pocket.
+    loyalty_min_redemption: int = 200
+    loyalty_max_redemption_percent: float = 0.5
+    # Lifetime points needed for each tier, and the earn multiplier it buys.
+    loyalty_silver_threshold: int = 2500
+    loyalty_gold_threshold: int = 10000
+    loyalty_platinum_threshold: int = 25000
+
+    # ------------------------------------------------------------------ #
+    # Referrals
+    # ------------------------------------------------------------------ #
+    # Both sides are paid when the newcomer's first order is *delivered*, not
+    # when they sign up — an invite that never buys anything costs nothing.
+    referrals_enabled: bool = True
+    referral_referrer_points: int = 1000
+    referral_referee_points: int = 500
+
+    # ------------------------------------------------------------------ #
+    # Subscriptions
+    # ------------------------------------------------------------------ #
+    # Repeat delivery of the things that run out. The discount is the trade for
+    # the commitment, and applies to every order the subscription places.
+    subscriptions_enabled: bool = True
+    subscription_discount_percent: float = 10.0
+    subscription_min_interval_days: int = 7
+    subscription_max_interval_days: int = 180
+    # A due subscription whose product is out of stock is retried on the next
+    # run rather than failed outright; after this many consecutive misses it is
+    # paused and the customer is told, so it can't retry forever in silence.
+    subscription_max_failures: int = 3
 
     # The store is also exposed as an MCP server at /mcp so agents can browse the
     # catalogue, manage a cart, and (with an admin token) run the shop. Tools are

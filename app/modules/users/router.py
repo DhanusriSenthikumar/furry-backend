@@ -1,5 +1,6 @@
 from fastapi import APIRouter, Depends
 
+from app.core.loyalty import tier_for
 from app.core.pagination import Pagination
 from app.deps import get_current_admin, get_current_user, get_db, pagination_params
 from app.modules.users.repository import UserRepository
@@ -21,12 +22,15 @@ def _service(db=Depends(get_db)) -> UserService:
 
 
 def user_out(doc: dict) -> UserOut:
+    tier, _multiplier = tier_for(int(doc.get("loyalty_lifetime_points", 0) or 0))
     return UserOut(
         id=str(doc["_id"]),
         name=doc["name"],
         email=doc["email"],
         is_admin=doc.get("is_admin", False),
         is_active=doc.get("is_active", True),
+        loyalty_points=int(doc.get("loyalty_points", 0) or 0),
+        loyalty_tier=tier,
     )
 
 

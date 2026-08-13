@@ -190,5 +190,34 @@ class EmailService:
             f"to appear.\n\n{settings.frontend_url}/returns",
         )
 
+    # ------------------------------------------------------------------ #
+    # Subscriptions
+    # ------------------------------------------------------------------ #
+
+    def send_subscription_order(self, to: str, name: str, order: dict, subscription: dict) -> bool:
+        """A repeat delivery has been raised and is waiting to be paid.
+
+        Said plainly because nothing was charged automatically — the store keeps
+        no card on file, and a customer who thinks a subscription bills itself
+        would find out when the parcel didn't arrive.
+        """
+        item = (order.get("items") or [{}])[0]
+        every = subscription.get("interval_days", 30)
+        return self.send(
+            to,
+            f"Your repeat delivery is ready — order #{_order_ref(order)}",
+            f"Hi {name},\n\nYour subscription for {item.get('name', 'your item')} "
+            f"(x{item.get('quantity', 1)}, every {every} days) is due, so we've put the "
+            f"order together with your subscriber discount already applied:\n\n"
+            f"  Subtotal: ${order.get('subtotal', 0):.2f}\n"
+            f"  Subscriber discount: -${order.get('discount', 0):.2f}\n"
+            f"  Shipping: ${order.get('shipping_fee', 0):.2f}\n"
+            f"  Tax: ${order.get('tax', 0):.2f}\n"
+            f"  Total: ${order.get('total', 0):.2f}\n\n"
+            f"It's waiting for payment — nothing has been charged:\n{_order_link(order)}\n\n"
+            f"Pause, reschedule or cancel any time at "
+            f"{settings.frontend_url}/subscriptions",
+        )
+
 
 email_service = EmailService()

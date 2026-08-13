@@ -17,6 +17,7 @@ from app.core.exceptions import ForbiddenError, NotFoundError, ValidationError
 from app.core.pagination import Pagination
 from app.core.pricing import price_refund
 from app.modules.orders.service import OrderService
+from app.modules.notifications.service import NotificationService
 from app.modules.payments.razorpay_client import RazorpayClient
 from app.modules.payments.repository import PaymentRepository
 from app.modules.payments.stripe_client import StripeClient
@@ -38,6 +39,7 @@ class ReturnService:
         stripe_client: StripeClient | None = None,
         razorpay_client: RazorpayClient | None = None,
         alerts: StockAlertService | None = None,
+        notifications: NotificationService | None = None,
     ):
         self.repo = repo
         self.orders = orders
@@ -45,6 +47,9 @@ class ReturnService:
         self.users = users
         # Goods coming back onto the shelf can settle someone else's wait.
         self.alerts = alerts
+        # A refund decision is the thing customers chase hardest, so it lands in
+        # the feed as well as the inbox.
+        self.notifications = notifications
         # All optional: without them a refund is still recorded and the customer
         # still gets their money owed on the books — it just has to be settled by
         # hand, the same fallback the checkout gateways use.
@@ -221,6 +226,8 @@ class ReturnService:
             },
         )
         await self._email_customer(updated, email_service.send_return_decision)
+        if self.notifications is not None:
+            await self.notifications.return_decided(updated, status, note.strip())
         return updated
 
     async def refund(self, return_id: str, admin: dict, payload: ReturnRefund) -> dict:
@@ -274,6 +281,8 @@ class ReturnService:
             ret["order_id"], amount, f"Refunded ${amount:.2f} for return #{return_id[-8:]}"
         )
         await self._email_customer(updated, email_service.send_refund_issued)
+        if self.notifications is not None:
+            await self.notifications.return_decided(updated, "refunded", f"${amount:.2f} is on its way back to you.")
         return updated
 
     async def _returnable_excluding(self, order: dict, return_id: str) -> dict[str, int]:

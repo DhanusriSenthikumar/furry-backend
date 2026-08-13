@@ -10,7 +10,7 @@ router = APIRouter(tags=["questions"])
 
 
 def _service(db=Depends(get_db)) -> QuestionService:
-    return QuestionService(QuestionRepository(db), ProductRepository(db))
+    return QuestionService(QuestionRepository(db), ProductRepository(db), NotificationService(NotificationRepository(db)))
 
 
 def _iso(value) -> str:

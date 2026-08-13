@@ -5,6 +5,10 @@ from app.core.shipping import carrier_name, carrier_options
 from app.deps import get_current_admin, get_current_user, get_db, pagination_params
 from app.modules.coupons.repository import CouponRepository
 from app.modules.coupons.service import CouponService
+from app.modules.loyalty.repository import LoyaltyRepository
+from app.modules.loyalty.service import LoyaltyService
+from app.modules.notifications.repository import NotificationRepository
+from app.modules.notifications.service import NotificationService
 from app.modules.orders.repository import OrderRepository
 from app.modules.orders.schemas import (
     OrderCancel,
@@ -18,22 +22,42 @@ from app.modules.orders.schemas import (
 )
 from app.modules.orders.service import OrderService
 from app.modules.products.repository import ProductRepository
-from app.modules.stock_alerts.repository import StockAlertRepository
-from app.modules.stock_alerts.service import StockAlertService
+from app.modules.referrals.repository import ReferralRepository
+from app.modules.referrals.service import ReferralService
+from app.modules.stock_alerts.router import build_stock_alert_service
 from app.modules.users.repository import UserRepository
 
 router = APIRouter(prefix="/orders", tags=["orders"])
 
 
-def _service(db=Depends(get_db)) -> OrderService:
+def build_order_service(db) -> OrderService:
+    """Assembles the order service with every collaborator it can have.
+
+    Shared with the payments, returns, and subscription routers so that an order
+    moved from any of them fires the same emails, the same feed entries, and the
+    same rewards settlement. A service built by hand somewhere else would
+    silently skip whichever collaborator that call site forgot.
+    """
     orders = OrderRepository(db)
+    products = ProductRepository(db)
+    users = UserRepository(db)
+    notifications = NotificationService(NotificationRepository(db))
+    loyalty = LoyaltyService(LoyaltyRepository(db), notifications)
+
     return OrderService(
         orders,
-        ProductRepository(db),
+        products,
         CouponService(CouponRepository(db), orders),
-        UserRepository(db),
-        StockAlertService(StockAlertRepository(db), ProductRepository(db), UserRepository(db)),
+        users,
+        build_stock_alert_service(db),
+        loyalty,
+        ReferralService(ReferralRepository(db), users, loyalty, notifications),
+        notifications,
     )
+
+
+def _service(db=Depends(get_db)) -> OrderService:
+    return build_order_service(db)
 
 
 def _iso(value):
@@ -68,9 +92,13 @@ def order_out(doc: dict) -> OrderOut:
         coupon_code=doc.get("coupon_code"),
         shipping_fee=doc.get("shipping_fee", 0.0),
         tax=doc.get("tax", 0.0),
+        rewards_discount=doc.get("rewards_discount", 0.0),
+        redeem_points=doc.get("redeem_points", 0),
         total=doc["total"],
         status=doc["status"],
         status_history=history,
+        source=doc.get("source", ""),
+        subscription_id=doc.get("subscription_id"),
         can_cancel=OrderService.can_cancel(doc),
         shipment=shipment_out(doc.get("shipment")),
         refunded_amount=doc.get("refunded_amount", 0.0),

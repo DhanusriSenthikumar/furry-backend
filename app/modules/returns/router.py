@@ -2,10 +2,9 @@ from fastapi import APIRouter, Depends
 
 from app.core.pagination import Pagination
 from app.deps import get_current_admin, get_current_user, get_db, pagination_params
-from app.modules.coupons.repository import CouponRepository
-from app.modules.coupons.service import CouponService
-from app.modules.orders.repository import OrderRepository
-from app.modules.orders.service import OrderService
+from app.modules.notifications.repository import NotificationRepository
+from app.modules.notifications.service import NotificationService
+from app.modules.orders.router import build_order_service
 from app.modules.payments.razorpay_client import razorpay_client
 from app.modules.payments.repository import PaymentRepository
 from app.modules.payments.stripe_client import stripe_client
@@ -20,32 +19,23 @@ from app.modules.returns.schemas import (
     ReturnResolve,
 )
 from app.modules.returns.service import ReturnService
-from app.modules.stock_alerts.repository import StockAlertRepository
-from app.modules.stock_alerts.service import StockAlertService
+from app.modules.stock_alerts.router import build_stock_alert_service
 from app.modules.users.repository import UserRepository
 
 router = APIRouter(prefix="/returns", tags=["returns"])
 
 
 def _service(db=Depends(get_db)) -> ReturnService:
-    orders_repo = OrderRepository(db)
-    alerts = StockAlertService(StockAlertRepository(db), ProductRepository(db), UserRepository(db))
-    order_service = OrderService(
-        orders_repo,
-        ProductRepository(db),
-        CouponService(CouponRepository(db), orders_repo),
-        UserRepository(db),
-        alerts,
-    )
     return ReturnService(
         ReturnRepository(db),
-        order_service,
+        build_order_service(db),
         ProductRepository(db),
         UserRepository(db),
         PaymentRepository(db),
         stripe_client,
         razorpay_client,
-        alerts,
+        build_stock_alert_service(db),
+        NotificationService(NotificationRepository(db)),
     )
 
 

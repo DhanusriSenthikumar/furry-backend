@@ -1,6 +1,8 @@
 from fastapi import APIRouter, Depends, Query
 
 from app.deps import get_current_admin, get_current_user, get_db, get_optional_user
+from app.modules.notifications.repository import NotificationRepository
+from app.modules.notifications.service import NotificationService
 from app.modules.products.repository import ProductRepository
 from app.modules.stock_alerts.repository import StockAlertRepository
 from app.modules.stock_alerts.schemas import StockAlertDemandOut, StockAlertStatusOut
@@ -12,8 +14,19 @@ from app.modules.users.repository import UserRepository
 router = APIRouter(tags=["stock-alerts"])
 
 
+def build_stock_alert_service(db) -> StockAlertService:
+    """Shared with the products, returns, and MCP routers so a restock reaches
+    the waiting list identically however the stock happened to move."""
+    return StockAlertService(
+        StockAlertRepository(db),
+        ProductRepository(db),
+        UserRepository(db),
+        NotificationService(NotificationRepository(db)),
+    )
+
+
 def _service(db=Depends(get_db)) -> StockAlertService:
-    return StockAlertService(StockAlertRepository(db), ProductRepository(db), UserRepository(db))
+    return build_stock_alert_service(db)
 
 
 @router.get("/products/{product_id}/stock-alert", response_model=StockAlertStatusOut)

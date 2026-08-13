@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 
 from app.core.email import email_service
 from app.core.exceptions import NotFoundError, ValidationError
+from app.modules.notifications.service import NotificationService
 from app.modules.products.repository import ProductRepository
 from app.modules.stock_alerts.repository import StockAlertRepository
 from app.modules.users.repository import UserRepository
@@ -27,12 +28,16 @@ class StockAlertService:
         repo: StockAlertRepository,
         products: ProductRepository,
         users: UserRepository | None = None,
+        notifications: NotificationService | None = None,
     ):
         self.repo = repo
         self.products = products
         # Only needed to address the email. Without it the alert is still
         # recorded and still counts as demand; nobody just gets told.
         self.users = users
+        # The restock also lands in the customer's feed, so someone who missed
+        # the email still finds out next time they open the site.
+        self.notifications = notifications
 
     async def _product(self, product_id: str) -> dict:
         product = await self.products.find_by_id(product_id)
@@ -83,6 +88,12 @@ class StockAlertService:
         return sent
 
     async def _notify_one(self, alert: dict, product: dict) -> bool:
+        # The feed entry goes out first and independently of the email: it can't
+        # fail the send, and it survives an SMTP outage that would otherwise
+        # leave the customer never hearing about the restock at all.
+        if self.notifications is not None:
+            await self.notifications.back_in_stock(alert["user_id"], product)
+
         if self.users is None:
             return False
 
