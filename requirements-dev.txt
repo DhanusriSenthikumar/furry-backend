@@ -1,0 +1,15 @@
+# Test-only dependencies. Kept out of requirements.txt so a deploy doesn't
+# install a test runner. Install with:
+#
+#   pip install -r requirements.txt -r requirements-dev.txt
+#
+# Unpinned (>=) for the same reason as the runtime requirements: Python 3.14
+# doesn't yet have prebuilt wheels for some exact pinned versions.
+-r requirements.txt
+
+pytest>=8.0
+pytest-asyncio>=1.0
+# In-memory stand-in for MongoDB. Honours unique/partial indexes, the guarded
+# $inc the points ledger relies on, and the aggregation pipelines balances are
+# rebuilt from — so tests exercise the real repositories, not fakes.
+mongomock-motor>=0.0.36

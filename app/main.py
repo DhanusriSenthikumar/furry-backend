@@ -37,6 +37,7 @@ from app.modules.subscriptions.router import router as subscriptions_router
 from app.modules.support.router import router as support_router
 from app.modules.users.router import router as users_router
 from app.modules.wishlist.router import router as wishlist_router
+from app.scheduler import build_subscription_runner
 
 # The same store, spoken to over MCP. None when MCP_ENABLED=false.
 mcp_app = build_mcp_app()
@@ -125,13 +126,31 @@ async def create_indexes() -> None:
 async def lifespan(_app: FastAPI):
     connect()
     await create_indexes()
-    if mcp_app is None:
-        yield
-        return
-    # The MCP transport keeps its own session manager, which only runs inside the
-    # app's lifespan — a mounted sub-app doesn't get one of its own.
-    async with mcp_app.router.lifespan_context(mcp_app):
-        yield
+
+    # Places the orders due subscriptions owe. Started here rather than left to
+    # an external cron because the deploy is a single uvicorn process with
+    # nowhere to hang one — see app/scheduler.py.
+    subscription_runner = build_subscription_runner()
+    # Published on app.state so /health can report it. A scheduler that has
+    # quietly stopped is otherwise invisible until someone notices the
+    # deliveries missing, which is the failure this whole module exists to fix.
+    _app.state.subscription_runner = subscription_runner
+    if subscription_runner is not None:
+        subscription_runner.start()
+
+    try:
+        if mcp_app is None:
+            yield
+        else:
+            # The MCP transport keeps its own session manager, which only runs
+            # inside the app's lifespan — a mounted sub-app doesn't get one of
+            # its own.
+            async with mcp_app.router.lifespan_context(mcp_app):
+                yield
+    finally:
+        # Awaited, so shutdown doesn't race a run halfway through placing an order.
+        if subscription_runner is not None:
+            await subscription_runner.stop()
 
 
 app = FastAPI(title="Pet Store API", lifespan=lifespan)
@@ -188,7 +207,7 @@ app.include_router(admin_router)
 
 
 @app.get("/health")
-async def health():
+async def health(request: Request):
     db_connected = False
     if mongodb.client is not None:
         try:
@@ -196,11 +215,22 @@ async def health():
             db_connected = True
         except Exception:
             db_connected = False
+
+    runner = getattr(request.app.state, "subscription_runner", None)
     return {
         "status": "ok",
         "db_configured": mongodb.database is not None,
         "db_connected": db_connected,
         "mcp_enabled": mcp_app is not None,
+        "subscription_runner": {
+            "enabled": runner is not None,
+            # False here with enabled True means the loop died — worth alerting on.
+            "running": runner.running if runner else False,
+            "runs": runner.runs if runner else 0,
+            "failures": runner.failures if runner else 0,
+            "last_run_at": runner.last_run_at.isoformat() if runner and runner.last_run_at else None,
+            "last_error": runner.last_error if runner else "",
+        },
     }
 
 

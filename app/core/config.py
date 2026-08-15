@@ -97,6 +97,20 @@ class Settings(BaseSettings):
     # paused and the customer is told, so it can't retry forever in silence.
     subscription_max_failures: int = 3
 
+    # The in-process scheduler that actually places due deliveries. Without it
+    # `run_due` only ever fires when an admin presses the button, so in a
+    # deployed store no repeat delivery would be placed at all.
+    #
+    # Turn this off if you would rather drive POST /admin/subscriptions/run from
+    # a real scheduler — running both at once is safe, since due rows are claimed
+    # before they are acted on.
+    subscription_runner_enabled: bool = True
+    subscription_runner_interval_minutes: int = 60
+    subscription_runner_batch_limit: int = 100
+    # Nothing useful happens in the first seconds of a boot, and staggering the
+    # first pass keeps a redeploy of several instances from all starting at once.
+    subscription_runner_initial_delay_seconds: int = 30
+
     # The store is also exposed as an MCP server at /mcp so agents can browse the
     # catalogue, manage a cart, and (with an admin token) run the shop. Tools are
     # scoped by whatever credential the caller presents, exactly like the REST API.

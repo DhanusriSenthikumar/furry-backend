@@ -29,7 +29,15 @@ from app.modules.users.repository import UserRepository
 router = APIRouter(tags=["subscriptions"])
 
 
-def _service(db=Depends(get_db)) -> SubscriptionService:
+def build_subscription_service(db) -> SubscriptionService:
+    """Assembles the service with every collaborator it can have.
+
+    Shared with the background runner in `app.scheduler`, for the same reason
+    `build_order_service` is shared: a service built by hand at another call site
+    would silently skip whichever collaborator that site forgot, and a scheduled
+    delivery that placed an order without emailing or notifying anyone would look
+    exactly like one that worked.
+    """
     return SubscriptionService(
         SubscriptionRepository(db),
         ProductRepository(db),
@@ -37,6 +45,10 @@ def _service(db=Depends(get_db)) -> SubscriptionService:
         build_order_service(db),
         NotificationService(NotificationRepository(db)),
     )
+
+
+def _service(db=Depends(get_db)) -> SubscriptionService:
+    return build_subscription_service(db)
 
 
 def _iso(value):
